@@ -24,7 +24,9 @@
       "approverName": "operator",
       "approverSecretFile": "",
       "pollIntervalSec": 3,
-      "notifyOnPending": true
+      "notifyOnPending": true,
+      "botpoliceLogPath": "~/Projects/botpolice/events.jsonl",
+      "notifyOnBotpoliceHigh": true
     },
     "schema": [
       {
@@ -70,6 +72,20 @@
         "label": "Notify on pending approval",
         "defaultValue": true,
         "description": "Send an Omarchy desktop notification when a new gated action waits for approval."
+      },
+      {
+        "key": "botpoliceLogPath",
+        "type": "path",
+        "label": "BotPolice event log",
+        "defaultValue": "~/Projects/botpolice/events.jsonl",
+        "description": "Path to BotPolice's append-only hash-chained events.jsonl log."
+      },
+      {
+        "key": "notifyOnBotpoliceHigh",
+        "type": "boolean",
+        "label": "Notify on BotPolice high alerts",
+        "defaultValue": true,
+        "description": "Send an Omarchy critical notification when BotPolice logs a high-severity honeypot or canary hit."
       }
     ]
   }

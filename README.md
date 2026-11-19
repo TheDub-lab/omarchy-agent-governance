@@ -9,6 +9,7 @@ Live desktop control plane for [`TheDub-lab/agentcover-sovereign`](https://githu
 - **Spend & scope telemetry**: shows allowed/blocked counts, cumulative spend (with budget meter when `budget_limit` is exposed), closed action vocabulary, lint status, and log shipping state.
 - **Hash-chained audit stream**: displays the latest decisions and short entry hashes from `GET /audit`.
 - **Two-step Kill Switch**: arms and confirms `POST /killswitch` directly from the bar panel.
+- **BotPolice honeypot & canary alerts**: tails [`TheDub-lab/botpolice`](https://github.com/TheDub-lab/botpolice)'s hash-chained `events.jsonl` (default `~/Projects/botpolice/events.jsonl`), surfaces decoy & canary hits in the panel, and fires an Omarchy critical notification whenever a `high`-severity hit arrives.
 - **Built-in Demo Guard**: click **Start demo guard** inside the panel to test approvals, prompt-injection blocks, spend tracking, and the kill switch locally without configuring an external agent.
 
 ## Connecting to `safety-protocol`

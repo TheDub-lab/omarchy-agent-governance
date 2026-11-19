@@ -20,11 +20,13 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime
 
 MAX_BODY_BYTES = 262_144  # 256 KiB hard response cap
 TIMEOUT_SEC = 1.5
 MAX_PENDING = 25
 MAX_AUDIT = 25
+MAX_BOTPOLICE = 20
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
@@ -183,7 +185,96 @@ def _normalize_audit(raw_events) -> list[dict]:
     return out
 
 
-def cmd_poll(guard_url: str, mcp_url: str, secret_file: str) -> dict:
+def _parse_iso_ts(raw_ts) -> float:
+    text = str(raw_ts or "").strip()
+    if not text:
+        return 0.0
+    try:
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        return datetime.fromisoformat(text).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def _read_botpolice_log(log_path: str) -> dict:
+    empty = {
+        "present": False,
+        "total": 0,
+        "high": 0,
+        "medium": 0,
+        "events": [],
+    }
+    raw_path = (log_path or "").strip()
+    if not raw_path:
+        return empty
+    expanded = os.path.expanduser(raw_path)
+    if not os.path.isfile(expanded):
+        return empty
+
+    try:
+        with open(expanded, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            start = max(0, size - MAX_BODY_BYTES)
+            fh.seek(start)
+            chunk = fh.read(MAX_BODY_BYTES)
+    except OSError:
+        return empty
+
+    lines = chunk.decode("utf-8", errors="replace").splitlines()
+    if start > 0 and lines:
+        # Drop potentially partial first line when reading from mid-file.
+        lines = lines[1:]
+
+    parsed_entries: list[dict] = []
+    high = 0
+    medium = 0
+    for line in lines:
+        text = line.strip()
+        if not text:
+            continue
+        try:
+            ev = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(ev, dict):
+            continue
+        sev = _clean_str(ev.get("severity") or "low", 16).lower()
+        if sev == "high":
+            high += 1
+        elif sev == "medium":
+            medium += 1
+        parsed_entries.append(
+            {
+                "event": _clean_str(ev.get("event") or "event", 48),
+                "service": _clean_str(ev.get("service") or "decoy", 32),
+                "severity": sev,
+                "srcIp": _clean_str(ev.get("src_ip") or "", 64),
+                "dstPort": _clean_int(ev.get("dst_port"), 0),
+                "summary": _clean_str(ev.get("summary") or "", 140),
+                "timestamp": _parse_iso_ts(ev.get("ts")),
+                "hash": _clean_str(ev.get("hash") or "", 24),
+            }
+        )
+
+    recent = parsed_entries[-MAX_BOTPOLICE:]
+    recent.reverse()
+    return {
+        "present": True,
+        "total": len(parsed_entries),
+        "high": high,
+        "medium": medium,
+        "events": recent,
+    }
+
+
+def cmd_poll(
+    guard_url: str,
+    mcp_url: str,
+    secret_file: str,
+    botpolice_log_path: str = "",
+) -> dict:
     secret = _read_secret(secret_file)
     result: dict = {
         "connected": False,
@@ -208,6 +299,7 @@ def cmd_poll(guard_url: str, mcp_url: str, secret_file: str) -> dict:
         },
         "pending": [],
         "audit": [],
+        "botpolice": _read_botpolice_log(botpolice_log_path),
         "authError": "",
         "error": "",
     }
@@ -332,7 +424,8 @@ def main(argv: list[str]) -> int:
 
     cmd = argv[1]
     if cmd == "poll" and len(argv) >= 5:
-        out = cmd_poll(argv[2], argv[3], argv[4])
+        bp_path = argv[5] if len(argv) >= 6 else ""
+        out = cmd_poll(argv[2], argv[3], argv[4], bp_path)
     elif cmd == "decide" and len(argv) >= 9:
         out = cmd_decide(argv[2], argv[3], argv[4], argv[5], argv[6], argv[7], argv[8])
     elif cmd == "killswitch" and len(argv) >= 4:

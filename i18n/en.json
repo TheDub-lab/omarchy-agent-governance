@@ -60,6 +60,16 @@
   "audit.hoursAgo": "%1h ago",
   "notify.title": "AgentCover Approval Needed",
   "notify.body": "%1 on %2 (%3)",
+  "notify.botpoliceTitle": "BotPolice High Alert",
+  "section.botpolice": {
+    "one": "BotPolice honeypot (%1 hit)",
+    "other": "BotPolice honeypot (%1 hits)"
+  },
+  "botpolice.highBadge": {
+    "one": "%1 high-severity alert",
+    "other": "%1 high-severity alerts"
+  },
+  "botpolice.empty": "Honeypot log active — no hits recorded yet.",
   "status.approved": "Approved %1",
   "status.denied": "Denied %1",
   "status.frozen": "Kill switch engaged",

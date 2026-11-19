@@ -36,14 +36,14 @@ Panel {
   }
 
   readonly property color barIconColor: {
-    if (service.frozen || service.hasPending) return urgent
-    if (!service.connected) return Qt.darker(barForeground, 1.65)
+    if (service.frozen || service.hasPending || service.botpoliceUnreadHigh > 0) return urgent
+    if (!service.connected && !service.botpolicePresent) return Qt.darker(barForeground, 1.65)
     return barForeground
   }
 
   readonly property color heroIconColor: {
-    if (service.frozen || service.hasPending) return urgent
-    if (!service.connected) return dim
+    if (service.frozen || service.hasPending || service.botpoliceUnreadHigh > 0) return urgent
+    if (!service.connected && !service.botpolicePresent) return dim
     if (service.mode === "shadow") return accent
     return foreground
   }
@@ -144,12 +144,37 @@ Panel {
     ])
   }
 
+  function sendBotpoliceNotification(serviceName, summary) {
+    Util.execArgv([
+      "omarchy-notification-send",
+      "-u", "critical",
+      "-g", "󰀦",
+      strings.t("notify.botpoliceTitle"),
+      serviceName + " · " + summary
+    ])
+  }
+
+  function botpoliceGlyph(ev) {
+    var sev = String(ev && ev.severity || "low")
+    if (sev === "high") return "󰀦"
+    if (sev === "medium") return "󰒄"
+    return "󰒃"
+  }
+
+  function botpoliceColor(ev) {
+    var sev = String(ev && ev.severity || "low")
+    if (sev === "high") return urgent
+    if (sev === "medium") return accent
+    return dim
+  }
+
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
   onOpenedChanged: {
     killswitchArmed = false
     if (opened) {
+      service.clearBotpoliceUnread()
       nowSec = Date.now() / 1000.0
       if (panelFlick) panelFlick.contentY = 0
       service.refresh()
@@ -163,6 +188,9 @@ Panel {
     panelOpen: root.opened
     onNotificationRequested: function(actionType, detail) {
       root.sendApprovalNotification(actionType, detail)
+    }
+    onBotpoliceAlertRequested: function(serviceName, summary) {
+      root.sendBotpoliceNotification(serviceName, summary)
     }
   }
 
@@ -190,7 +218,10 @@ Panel {
         pending: service.pending.length,
         allowed: service.allowedCount,
         blocked: service.blockedCount,
-        totalCost: service.totalCost
+        totalCost: service.totalCost,
+        botpolicePresent: service.botpolicePresent,
+        botpoliceTotal: service.botpoliceTotal,
+        botpoliceHigh: service.botpoliceHigh
       })
     }
   }
@@ -214,9 +245,10 @@ Panel {
           font.pixelSize: button.iconSize
         }
 
-        // Urgent dot badge when approvals are pending or kill switch is engaged.
+        // Urgent dot badge when approvals are pending, kill switch is engaged,
+        // or BotPolice logged a new high-severity honeypot/canary alert.
         Rectangle {
-          visible: service.hasPending || service.frozen
+          visible: service.hasPending || service.frozen || service.botpoliceUnreadHigh > 0
           width: Math.max(5, Math.round(button.iconSize * 0.34))
           height: width
           radius: width / 2
@@ -799,6 +831,120 @@ Panel {
                       if (age !== "") parts.push(age)
                       if (Number(auditRow.modelData.cost || 0) > 0) parts.push(root.formatUsd(auditRow.modelData.cost))
                       if (String(auditRow.modelData.entryHash || "") !== "") parts.push("#" + String(auditRow.modelData.entryHash).slice(0, 8))
+                      return parts.join(" · ")
+                    }
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    elide: Text.ElideRight
+                  }
+                }
+              }
+            }
+          }
+
+          // ---------- BotPolice Honeypot Feed ----------
+          PanelSeparator {
+            visible: service.botpolicePresent
+            foreground: root.foreground
+          }
+
+          Column {
+            visible: service.botpolicePresent
+            width: parent.width
+            spacing: Style.space(8)
+
+            RowLayout {
+              width: parent.width
+              spacing: Style.space(6)
+
+              PanelSectionHeader {
+                Layout.fillWidth: true
+                text: strings.tn("section.botpolice", service.botpoliceTotal)
+                  .arg(Commons.I18n.formatNumber(service.botpoliceTotal))
+                foreground: service.botpoliceHigh > 0 ? root.urgent : root.foreground
+                fontFamily: root.fontFamily
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                visible: service.botpoliceHigh > 0
+                text: strings.tn("botpolice.highBadge", service.botpoliceHigh)
+                  .arg(Commons.I18n.formatNumber(service.botpoliceHigh))
+                color: root.urgent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              visible: service.botpoliceEvents.length === 0
+              width: parent.width
+              text: strings.t("botpolice.empty")
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            Repeater {
+              model: service.botpoliceEvents.slice(0, 6)
+
+              RowLayout {
+                id: bpRow
+                required property var modelData
+                width: parent.width
+                spacing: Style.space(8)
+
+                Text {
+                  textFormat: Text.PlainText
+                  text: root.botpoliceGlyph(bpRow.modelData)
+                  color: root.botpoliceColor(bpRow.modelData)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  Layout.alignment: Qt.AlignTop
+                  Layout.topMargin: Style.space(1)
+                }
+
+                ColumnLayout {
+                  Layout.fillWidth: true
+                  spacing: Style.space(1)
+
+                  Text {
+                    textFormat: Text.PlainText
+                    Layout.fillWidth: true
+                    text: String(bpRow.modelData.service || "decoy").toUpperCase() + " · " + String(bpRow.modelData.event || "event").replace(/_/g, " ")
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.bold: String(bpRow.modelData.severity || "") === "high"
+                    elide: Text.ElideRight
+                  }
+
+                  Text {
+                    textFormat: Text.PlainText
+                    visible: String(bpRow.modelData.summary || "") !== ""
+                    Layout.fillWidth: true
+                    text: String(bpRow.modelData.summary || "")
+                    color: String(bpRow.modelData.severity || "") === "high" ? root.urgent : root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    elide: Text.ElideRight
+                  }
+
+                  Text {
+                    textFormat: Text.PlainText
+                    Layout.fillWidth: true
+                    text: {
+                      var parts = []
+                      var ip = String(bpRow.modelData.srcIp || "")
+                      var port = Number(bpRow.modelData.dstPort || 0)
+                      if (ip !== "") parts.push(port > 0 ? ip + ":" + port : ip)
+                      var age = root.formatAge(bpRow.modelData.timestamp)
+                      if (age !== "") parts.push(age)
+                      var h = String(bpRow.modelData.hash || "")
+                      if (h !== "") parts.push("#" + h.slice(0, 8))
                       return parts.join(" · ")
                     }
                     color: root.dim

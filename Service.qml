@@ -20,6 +20,8 @@ Item {
   readonly property string approverSecretFile: String(setting("approverSecretFile", ""))
   readonly property int pollIntervalSec: Math.max(1, Math.min(60, Number(setting("pollIntervalSec", 3))))
   readonly property bool notifyOnPending: setting("notifyOnPending", true) !== false
+  readonly property string botpoliceLogPath: String(setting("botpoliceLogPath", "~/Projects/botpolice/events.jsonl"))
+  readonly property bool notifyOnBotpoliceHigh: setting("notifyOnBotpoliceHigh", true) !== false
 
   // Live snapshot state
   property bool connected: false
@@ -44,6 +46,16 @@ Item {
 
   property var pending: []
   property var audit: []
+
+  // BotPolice honeypot state
+  property bool botpolicePresent: false
+  property int botpoliceTotal: 0
+  property int botpoliceHigh: 0
+  property int botpoliceMedium: 0
+  property var botpoliceEvents: []
+  property int botpoliceUnreadHigh: 0
+  property var seenBotpoliceHashes: ({})
+
   property string authError: ""
   property string lastMessage: ""
   property bool lastMessageIsError: false
@@ -52,7 +64,7 @@ Item {
 
   readonly property bool frozen: state === "frozen" || state === "revoked"
   readonly property bool hasPending: pending.length > 0
-  readonly property bool alarming: frozen || hasPending
+  readonly property bool alarming: frozen || hasPending || botpoliceUnreadHigh > 0
 
   // Track seen pending tokens so notifications fire once per token.
   property var seenTokens: ({})
@@ -62,6 +74,11 @@ Item {
 
   signal stateRefreshed()
   signal notificationRequested(string title, string body)
+  signal botpoliceAlertRequested(string serviceName, string summary)
+
+  function clearBotpoliceUnread() {
+    botpoliceUnreadHigh = 0
+  }
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
@@ -87,7 +104,8 @@ Item {
       "poll",
       guardUrl,
       mcpControlUrl,
-      approverSecretFile
+      approverSecretFile,
+      botpoliceLogPath
     ]
     pollProcess.running = true
   }
@@ -191,9 +209,41 @@ Item {
     pending = nextPending
 
     audit = Array.isArray(parsed.audit) ? parsed.audit : []
+
+    var bp = parsed.botpolice && typeof parsed.botpolice === "object" ? parsed.botpolice : {}
+    botpolicePresent = bp.present === true
+    botpoliceTotal = Number(bp.total || 0)
+    botpoliceHigh = Number(bp.high || 0)
+    botpoliceMedium = Number(bp.medium || 0)
+    var nextBpEvents = Array.isArray(bp.events) ? bp.events : []
+    notifyNewBotpoliceAlerts(nextBpEvents)
+    botpoliceEvents = nextBpEvents
+
     authError = String(parsed.authError || "")
     initialPollDone = true
     stateRefreshed()
+  }
+
+  function notifyNewBotpoliceAlerts(nextEvents) {
+    var nextSeen = Object.assign({}, seenBotpoliceHashes)
+    for (var i = 0; i < nextEvents.length; i++) {
+      var ev = nextEvents[i]
+      if (!ev) continue
+      var key = String(ev.hash || (String(ev.timestamp || "") + ":" + String(ev.event || "")))
+      if (key === "") continue
+      if (!nextSeen[key]) {
+        nextSeen[key] = true
+        if (initialPollDone && String(ev.severity || "") === "high") {
+          if (!panelOpen) botpoliceUnreadHigh += 1
+          if (notifyOnBotpoliceHigh) {
+            var svc = String(ev.service || "decoy").toUpperCase()
+            var detail = String(ev.summary || ev.event || "High-severity hit")
+            botpoliceAlertRequested(svc, detail)
+          }
+        }
+      }
+    }
+    seenBotpoliceHashes = nextSeen
   }
 
   function notifyNewApprovals(nextPending) {
