@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "id": "thedub.governance",
+  "name": "Agent Governance",
+  "version": "1.0.0",
+  "author": "TheDub-lab",
+  "license": "MIT",
+  "description": "Live AI agent governance bar widget for safety-protocol (agentcover-sovereign): monitor spend and blocked actions, approve or deny gated tool calls, inspect the hash-chained audit trail, and trigger the kill switch.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Agent Governance",
+    "description": "Live status, spend, pending approvals, hash-chained audit trail, and kill switch for safety-guard.",
+    "category": "AI",
+    "defaultSection": "right",
+    "aliases": ["governance", "agentcover", "safety-guard"],
+    "allowMultiple": false,
+    "defaults": {
+      "guardUrl": "http://127.0.0.1:8080",
+      "mcpControlUrl": "http://127.0.0.1:8788",
+      "approverName": "operator",
+      "approverSecretFile": "",
+      "pollIntervalSec": 3,
+      "notifyOnPending": true
+    },
+    "schema": [
+      {
+        "key": "guardUrl",
+        "type": "string",
+        "label": "Guard service URL",
+        "defaultValue": "http://127.0.0.1:8080",
+        "description": "Loopback URL for `safety-guard serve` (GET /health, GET /audit, POST /approve, POST /killswitch)."
+      },
+      {
+        "key": "mcpControlUrl",
+        "type": "string",
+        "label": "MCP control URL",
+        "defaultValue": "http://127.0.0.1:8788",
+        "description": "Loopback URL for `safety-guard mcp-proxy` approval control endpoint (GET /pending, POST /approve)."
+      },
+      {
+        "key": "approverName",
+        "type": "string",
+        "label": "Approver identity",
+        "defaultValue": "operator",
+        "description": "Operator name recorded in the hash-chained audit trail when approving or denying actions."
+      },
+      {
+        "key": "approverSecretFile",
+        "type": "path",
+        "label": "Approver secret file",
+        "defaultValue": "",
+        "description": "Optional path to the 0600 secret file written by `safety-guard mcp-proxy --approver-secret-file`."
+      },
+      {
+        "key": "pollIntervalSec",
+        "type": "integer",
+        "label": "Poll interval (seconds)",
+        "min": 1,
+        "max": 60,
+        "step": 1,
+        "defaultValue": 3
+      },
+      {
+        "key": "notifyOnPending",
+        "type": "boolean",
+        "label": "Notify on pending approval",
+        "defaultValue": true,
+        "description": "Send an Omarchy desktop notification when a new gated action waits for approval."
+      }
+    ]
+  }
+}
